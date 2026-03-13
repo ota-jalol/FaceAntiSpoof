@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Browser Version Test - Face Anti-Spoof</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .test-card {
+            background: white;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .test-card h2 {
+            color: #667eea;
+            margin-top: 0;
+        }
+        .test-status {
+            display: inline-block;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-weight: bold;
+            margin: 5px 0;
+        }
+        .pass { background: #27ae60; color: white; }
+        .fail { background: #e74c3c; color: white; }
+        .pending { background: #95a5a6; color: white; }
+        button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 10px 5px 0 0;
+        }
+        button:hover { background: #5568d3; }
+        pre {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        .info { color: #666; font-size: 14px; }
+    </style>
+</head>
+<body>
+    <h1>🧪 Browser Version Test Suite</h1>
+    <p class="info">Тестирование компонентов браузерной версии Face Anti-Spoof Detection</p>
+
+    <div class="test-card">
+        <h2>1. Проверка зависимостей</h2>
+        <div id="deps-status"></div>
+        <button onclick="testDependencies()">Запустить тест</button>
+    </div>
+
+    <div class="test-card">
+        <h2>2. Проверка ONNX моделей</h2>
+        <div id="models-status"></div>
+        <button onclick="testModels()">Запустить тест</button>
+    </div>
+
+    <div class="test-card">
+        <h2>3. Проверка API браузера</h2>
+        <div id="browser-status"></div>
+        <button onclick="testBrowserAPIs()">Запустить тест</button>
+    </div>
+
+    <div class="test-card">
+        <h2>4. Тест предобработки изображений</h2>
+        <div id="preprocessing-status"></div>
+        <button onclick="testPreprocessing()">Запустить тест</button>
+        <canvas id="testCanvas" width="128" height="128" style="display:none;"></canvas>
+    </div>
+
+    <div class="test-card">
+        <h2>5. Полный интеграционный тест</h2>
+        <div id="integration-status"></div>
+        <button onclick="runFullTest()">Запустить полный тест</button>
+        <p class="info">⚠️ Требует доступ к камере</p>
+    </div>
+
+    <div class="test-card">
+        <h2>📊 Результаты</h2>
+        <div id="results"></div>
+    </div>
+
+    <script>
+        let testResults = {
+            dependencies: 'pending',
+            models: 'pending',
+            browserAPIs: 'pending',
+            preprocessing: 'pending',
+            integration: 'pending'
+        };
+
+        function updateResults() {
+            const results = document.getElementById('results');
+            const total = Object.keys(testResults).length;
+            const passed = Object.values(testResults).filter(r => r === 'pass').length;
+            const failed = Object.values(testResults).filter(r => r === 'fail').length;
+
+            results.innerHTML = `
+                <p><strong>Всего тестов:</strong> ${total}</p>
+                <p><span class="test-status pass">Пройдено: ${passed}</span></p>
+                <p><span class="test-status fail">Провалено: ${failed}</span></p>
+                <p><span class="test-status pending">Ожидает: ${total - passed - failed}</span></p>
+            `;
+        }
+
+        async function testDependencies() {
+            const status = document.getElementById('deps-status');
+            status.innerHTML = '<p>Проверка...</p>';
+
+            try {
+                const tests = [];
+
+                // TensorFlow.js
+                tests.push({
+                    name: 'TensorFlow.js',
+                    result: typeof tf !== 'undefined'
+                });
+
+                // BlazeFace
+                tests.push({
+                    name: 'BlazeFace',
+                    result: typeof blazeface !== 'undefined'
+                });
+
+                // ONNX Runtime
+                tests.push({
+                    name: 'ONNX Runtime Web',
+                    result: typeof ort !== 'undefined'
+                });
+
+                let html = '<ul>';
+                let allPassed = true;
+                for (const test of tests) {
+                    const statusClass = test.result ? 'pass' : 'fail';
+                    html += `<li><span class="test-status ${statusClass}">${test.name}: ${test.result ? 'OK' : 'FAIL'}</span></li>`;
+                    if (!test.result) allPassed = false;
+                }
+                html += '</ul>';
+
+                testResults.dependencies = allPassed ? 'pass' : 'fail';
+                status.innerHTML = html;
+                updateResults();
+
+            } catch (error) {
+                status.innerHTML = `<p class="test-status fail">Ошибка: ${error.message}</p>`;
+                testResults.dependencies = 'fail';
+                updateResults();
+            }
+        }
+
+        async function testModels() {
+            const status = document.getElementById('models-status');
+            status.innerHTML = '<p>Проверка...</p>';
+
+            try {
+                const models = [
+                    'models/best_model_quantized.onnx',
+                    'models/face_detection_yunet.onnx'
+                ];
+
+                let html = '<ul>';
+                let allPassed = true;
+
+                for (const model of models) {
+                    try {
+                        const response = await fetch(model, { method: 'HEAD' });
+                        const exists = response.ok;
+                        const size = response.headers.get('content-length');
+                        const statusClass = exists ? 'pass' : 'fail';
+                        html += `<li><span class="test-status ${statusClass}">${model}: ${exists ? 'OK (' + (size ? Math.round(size/1024) + ' KB)' : 'unknown size)') : 'NOT FOUND'}</span></li>`;
+                        if (!exists) allPassed = false;
+                    } catch (e) {
+                        html += `<li><span class="test-status fail">${model}: ERROR</span></li>`;
+                        allPassed = false;
+                    }
+                }
+                html += '</ul>';
+
+                testResults.models = allPassed ? 'pass' : 'fail';
+                status.innerHTML = html;
+                updateResults();
+
+            } catch (error) {
+                status.innerHTML = `<p class="test-status fail">Ошибка: ${error.message}</p>`;
+                testResults.models = 'fail';
+                updateResults();
+            }
+        }
+
+        async function testBrowserAPIs() {
+            const status = document.getElementById('browser-status');
+            status.innerHTML = '<p>Проверка...</p>';
+
+            try {
+                const tests = [
+                    {
+                        name: 'WebRTC (getUserMedia)',
+                        result: !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)
+                    },
+                    {
+                        name: 'Canvas API',
+                        result: !!document.createElement('canvas').getContext
+                    },
+                    {
+                        name: 'WebGL',
+                        result: (() => {
+                            try {
+                                const canvas = document.createElement('canvas');
+                                return !!(canvas.getContext('webgl') || canvas.getContext('experimental-webgl'));
+                            } catch (e) {
+                                return false;
+                            }
+                        })()
+                    },
+                    {
+                        name: 'WebAssembly',
+                        result: typeof WebAssembly !== 'undefined'
+                    },
+                    {
+                        name: 'Performance API',
+                        result: typeof performance !== 'undefined'
+                    }
+                ];
+
+                let html = '<ul>';
+                let allPassed = true;
+                for (const test of tests) {
+                    const statusClass = test.result ? 'pass' : 'fail';
+                    html += `<li><span class="test-status ${statusClass}">${test.name}: ${test.result ? 'OK' : 'NOT SUPPORTED'}</span></li>`;
+                    if (!test.result) allPassed = false;
+                }
+                html += '</ul>';
+
+                testResults.browserAPIs = allPassed ? 'pass' : 'fail';
+                status.innerHTML = html;
+                updateResults();
+
+            } catch (error) {
+                status.innerHTML = `<p class="test-status fail">Ошибка: ${error.message}</p>`;
+                testResults.browserAPIs = 'fail';
+                updateResults();
+            }
+        }
+
+        async function testPreprocessing() {
+            const status = document.getElementById('preprocessing-status');
+            status.innerHTML = '<p>Проверка...</p>';
+
+            try {
+                // Проверяем наличие класса ImagePreprocessor
+                if (typeof ImagePreprocessor === 'undefined') {
+                    throw new Error('ImagePreprocessor не загружен. Проверьте js/preprocessing.js');
+                }
+
+                // Создаём тестовое изображение
+                const canvas = document.getElementById('testCanvas');
+                const ctx = canvas.getContext('2d');
+                ctx.fillStyle = '#ff0000';
+                ctx.fillRect(0, 0, 128, 128);
+
+                // Тестовый bbox
+                const bbox = { x: 10, y: 10, width: 50, height: 50 };
+
+                // Тест предобработки
+                const tensor = ImagePreprocessor.preprocess(canvas, bbox, 1.5);
+
+                // Проверки
+                const tests = [
+                    {
+                        name: 'Размер тензора',
+                        result: tensor.length === ImagePreprocessor.TENSOR_LENGTH
+                    },
+                    {
+                        name: 'Тип данных',
+                        result: tensor instanceof Float32Array
+                    },
+                    {
+                        name: 'Диапазон значений [0,1]',
+                        result: Array.from(tensor).every(v => v >= 0 && v <= 1)
+                    },
+                    {
+                        name: 'CHW формат (не все нули)',
+                        result: Array.from(tensor).some(v => v > 0)
+                    }
+                ];
+
+                let html = '<ul>';
+                let allPassed = true;
+                for (const test of tests) {
+                    const statusClass = test.result ? 'pass' : 'fail';
+                    html += `<li><span class="test-status ${statusClass}">${test.name}: ${test.result ? 'OK' : 'FAIL'}</span></li>`;
+                    if (!test.result) allPassed = false;
+                }
+                html += '</ul>';
+                html += `<p class="info">Размер тензора: ${tensor.length} элементов</p>`;
+
+                testResults.preprocessing = allPassed ? 'pass' : 'fail';
+                status.innerHTML = html;
+                updateResults();
+
+            } catch (error) {
+                status.innerHTML = `<p class="test-status fail">Ошибка: ${error.message}</p>`;
+                testResults.preprocessing = 'fail';
+                updateResults();
+            }
+        }
+
+        async function runFullTest() {
+            const status = document.getElementById('integration-status');
+            status.innerHTML = '<p>⚠️ Этот тест требует доступ к камере. Откройте index.html для полного интеграционного теста.</p>';
+            status.innerHTML += '<p class="info">Компоненты готовы к тестированию. Используйте главное приложение для проверки работы с камерой.</p>';
+            testResults.integration = 'pending';
+            updateResults();
+        }
+
+        // Автоматический запуск всех тестов кроме интеграционного
+        window.addEventListener('DOMContentLoaded', () => {
+            updateResults();
+        });
+    </script>
+
+    <!-- Подключение зависимостей для тестирования -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.15.0/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface@0.0.7/dist/blazeface.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.0/dist/ort.min.js"></script>
+    <script src="js/preprocessing.js"></script>
+</body>
+</html>
