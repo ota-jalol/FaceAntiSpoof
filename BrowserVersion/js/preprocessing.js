@@ -1,12 +1,13 @@
 /**
- * ImagePreprocessor - JavaScript port of C# ImagePreprocessor
- * Порт из FaceAntiSpoof.Core/Preprocessing/ImagePreprocessor.cs
+ * ImagePreprocessor - Optimized JavaScript port avoiding canvas artifacts
+ * Улучшенная версия без множественных canvas операций
  *
  * Пайплайн предобработки:
- * 1. Квадратный crop с BORDER_REFLECT_101 padding
- * 2. Letterbox resize до 128×128 с сохранением пропорций
- * 3. Нормализация /255 → [0.0, 1.0]
- * 4. HWC → CHW преобразование
+ * 1. Прямое чтение пикселей из источника
+ * 2. Квадратный crop с BORDER_REFLECT_101 padding
+ * 3. Letterbox resize до 128×128 с сохранением пропорций
+ * 4. Нормализация /255 → [0.0, 1.0]
+ * 5. HWC → CHW преобразование
  */
 
 class ImagePreprocessor {
@@ -22,240 +23,175 @@ class ImagePreprocessor {
      * @returns {Float32Array} - Тензор в формате CHW [1, 3, 128, 128]
      */
     static preprocess(source, bbox, expansionFactor = 1.5) {
-        // 1. Создаём квадратный crop с reflection padding
-        const faceCrop = this.cropFaceWithReflection(source, bbox, expansionFactor);
+        // Получаем размеры источника
+        const originalWidth = source.videoWidth || source.width;
+        const originalHeight = source.videoHeight || source.height;
 
-        // 2. Letterbox resize до 128×128
-        const letterboxed = this.letterboxResize(faceCrop, this.INPUT_SIZE);
+        // 1. Читаем пиксели из источника ОДИН РАЗ
+        const sourceCanvas = document.createElement('canvas');
+        sourceCanvas.width = originalWidth;
+        sourceCanvas.height = originalHeight;
+        const sourceCtx = sourceCanvas.getContext('2d', { willReadFrequently: true });
+        sourceCtx.drawImage(source, 0, 0);
+        const sourceImageData = sourceCtx.getImageData(0, 0, originalWidth, originalHeight);
+        const sourcePixels = sourceImageData.data;
 
-        // 3. Получаем пиксели и конвертируем в CHW + нормализация
-        const tensor = this.convertToTensorCHW(letterboxed);
+        // 2. Вычисляем параметры квадратного кропа
+        const w = bbox.width;
+        const h = bbox.height;
+        const maxDim = Math.max(w, h);
+        const centerX = bbox.x + w / 2;
+        const centerY = bbox.y + h / 2;
+        const cropSize = Math.floor(maxDim * expansionFactor);
+        const x = Math.floor(centerX - cropSize / 2);
+        const y = Math.floor(centerY - cropSize / 2);
+
+        // 3. Создаём crop с reflection padding напрямую в память
+        const croppedPixels = this.cropWithReflectionPadding(
+            sourcePixels, originalWidth, originalHeight,
+            x, y, cropSize
+        );
+
+        // 4. Letterbox resize до 128×128
+        const resizedPixels = this.letterboxResize(croppedPixels, cropSize, this.INPUT_SIZE);
+
+        // 5. Конвертируем в CHW тензор с нормализацией
+        const tensor = this.convertRGBAToCHW(resizedPixels, this.INPUT_SIZE);
 
         return tensor;
     }
 
     /**
-     * Создаёт квадратный crop лица с reflection padding
-     * Порт из BoundingBoxHelper.CropFace()
+     * Выполняет crop с reflection padding без canvas
+     * @param {Uint8ClampedArray} sourcePixels - Исходные пиксели в формате RGBA
+     * @param {number} sourceWidth - Ширина источника
+     * @param {number} sourceHeight - Высота источника
+     * @param {number} x - X координата начала кропа
+     * @param {number} y - Y координата начала кропа
+     * @param {number} cropSize - Размер квадратного кропа
+     * @returns {Uint8ClampedArray} - Кропнутые пиксели в формате RGBA
      */
-    static cropFaceWithReflection(source, bbox, expansionFactor) {
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
+    static cropWithReflectionPadding(sourcePixels, sourceWidth, sourceHeight, x, y, cropSize) {
+        const croppedPixels = new Uint8ClampedArray(cropSize * cropSize * 4);
 
-        // Получаем размеры источника
-        const originalWidth = source.videoWidth || source.width;
-        const originalHeight = source.videoHeight || source.height;
+        for (let h = 0; h < cropSize; h++) {
+            for (let w = 0; w < cropSize; w++) {
+                // Вычисляем координаты в исходном изображении
+                let srcX = x + w;
+                let srcY = y + h;
 
-        const w = bbox.width;
-        const h = bbox.height;
+                // Применяем BORDER_REFLECT_101
+                if (srcX < 0) {
+                    srcX = -srcX - 1;
+                } else if (srcX >= sourceWidth) {
+                    srcX = 2 * sourceWidth - srcX - 1;
+                }
 
-        // Квадрат по максимальной стороне
-        const maxDim = Math.max(w, h);
-        const centerX = bbox.x + w / 2;
-        const centerY = bbox.y + h / 2;
+                if (srcY < 0) {
+                    srcY = -srcY - 1;
+                } else if (srcY >= sourceHeight) {
+                    srcY = 2 * sourceHeight - srcY - 1;
+                }
 
-        const cropSize = Math.floor(maxDim * expansionFactor);
-        let x = Math.floor(centerX - cropSize / 2);
-        let y = Math.floor(centerY - cropSize / 2);
+                // Клиппинг на всякий случай
+                srcX = Math.max(0, Math.min(sourceWidth - 1, srcX));
+                srcY = Math.max(0, Math.min(sourceHeight - 1, srcY));
 
-        // Клиппинг к границам кадра
-        const cropX1 = Math.max(0, x);
-        const cropY1 = Math.max(0, y);
-        const cropX2 = Math.min(originalWidth, x + cropSize);
-        const cropY2 = Math.min(originalHeight, y + cropSize);
+                // Копируем пиксель
+                const srcIndex = (srcY * sourceWidth + srcX) * 4;
+                const dstIndex = (h * cropSize + w) * 4;
 
-        // Padding для лиц у краёв кадра
-        const topPad = Math.max(0, -y);
-        const leftPad = Math.max(0, -x);
-        const bottomPad = Math.max(0, (y + cropSize) - originalHeight);
-        const rightPad = Math.max(0, (x + cropSize) - originalWidth);
-
-        // Размер canvas с padding
-        canvas.width = cropSize;
-        canvas.height = cropSize;
-
-        // Применяем BORDER_REFLECT_101 padding
-        if (topPad > 0 || leftPad > 0 || bottomPad > 0 || rightPad > 0) {
-            this.applyReflectionPadding(ctx, source,
-                cropX1, cropY1, cropX2 - cropX1, cropY2 - cropY1,
-                leftPad, topPad, rightPad, bottomPad, cropSize);
-        } else {
-            // Прямое копирование без padding
-            ctx.drawImage(source, cropX1, cropY1, cropX2 - cropX1, cropY2 - cropY1,
-                          0, 0, cropSize, cropSize);
+                croppedPixels[dstIndex] = sourcePixels[srcIndex];         // R
+                croppedPixels[dstIndex + 1] = sourcePixels[srcIndex + 1]; // G
+                croppedPixels[dstIndex + 2] = sourcePixels[srcIndex + 2]; // B
+                croppedPixels[dstIndex + 3] = 255;                         // A
+            }
         }
 
-        return canvas;
+        return croppedPixels;
     }
 
     /**
-     * Применяет отражающий padding (BORDER_REFLECT_101)
+     * Letterbox resize с сохранением пропорций без canvas
+     * @param {Uint8ClampedArray} sourcePixels - Исходные пиксели
+     * @param {number} sourceSize - Размер исходного изображения
+     * @param {number} targetSize - Целевой размер (128)
+     * @returns {Uint8ClampedArray} - Resized пиксели
      */
-    static applyReflectionPadding(ctx, source, sx, sy, sw, sh,
-                                   leftPad, topPad, rightPad, bottomPad, cropSize) {
-        // Центральная область
-        ctx.drawImage(source, sx, sy, sw, sh, leftPad, topPad, sw, sh);
+    static letterboxResize(sourcePixels, sourceSize, targetSize) {
+        // Вычисляем параметры resize
+        const ratio = targetSize / sourceSize;
+        const scaledSize = Math.floor(sourceSize * ratio);
+        const offset = Math.floor((targetSize - scaledSize) / 2);
 
-        // Top padding (отражаем сверху)
-        if (topPad > 0) {
-            const reflectHeight = Math.min(topPad, sh);
-            ctx.save();
-            ctx.scale(1, -1);
-            ctx.drawImage(source, sx, sy, sw, reflectHeight,
-                         leftPad, -topPad, sw, reflectHeight);
-            ctx.restore();
+        const resizedPixels = new Uint8ClampedArray(targetSize * targetSize * 4);
+
+        // Заполняем чёрным фоном
+        resizedPixels.fill(0);
+
+        // Применяем bilinear интерполяцию для resize
+        for (let h = 0; h < scaledSize; h++) {
+            for (let w = 0; w < scaledSize; w++) {
+                // Вычисляем координаты в исходном изображении
+                const srcX = w / ratio;
+                const srcY = h / ratio;
+
+                // Bilinear интерполяция
+                const x0 = Math.floor(srcX);
+                const y0 = Math.floor(srcY);
+                const x1 = Math.min(x0 + 1, sourceSize - 1);
+                const y1 = Math.min(y0 + 1, sourceSize - 1);
+
+                const fx = srcX - x0;
+                const fy = srcY - y0;
+
+                // Индексы 4 соседних пикселей
+                const idx00 = (y0 * sourceSize + x0) * 4;
+                const idx01 = (y0 * sourceSize + x1) * 4;
+                const idx10 = (y1 * sourceSize + x0) * 4;
+                const idx11 = (y1 * sourceSize + x1) * 4;
+
+                // Целевой индекс с учётом padding
+                const dstIndex = ((h + offset) * targetSize + (w + offset)) * 4;
+
+                // Интерполяция для каждого канала (RGB)
+                for (let c = 0; c < 3; c++) {
+                    const v00 = sourcePixels[idx00 + c];
+                    const v01 = sourcePixels[idx01 + c];
+                    const v10 = sourcePixels[idx10 + c];
+                    const v11 = sourcePixels[idx11 + c];
+
+                    const v0 = v00 * (1 - fx) + v01 * fx;
+                    const v1 = v10 * (1 - fx) + v11 * fx;
+                    const value = v0 * (1 - fy) + v1 * fy;
+
+                    resizedPixels[dstIndex + c] = Math.round(value);
+                }
+                resizedPixels[dstIndex + 3] = 255; // Alpha
+            }
         }
 
-        // Bottom padding (отражаем снизу)
-        if (bottomPad > 0) {
-            const reflectHeight = Math.min(bottomPad, sh);
-            const sourceY = sy + sh - reflectHeight;
-            const destY = topPad + sh;
-            ctx.save();
-            ctx.scale(1, -1);
-            ctx.drawImage(source, sx, sourceY, sw, reflectHeight,
-                         leftPad, -(destY + reflectHeight), sw, reflectHeight);
-            ctx.restore();
-        }
-
-        // Left padding (отражаем слева)
-        if (leftPad > 0) {
-            const reflectWidth = Math.min(leftPad, sw);
-            ctx.save();
-            ctx.scale(-1, 1);
-            ctx.drawImage(source, sx, sy, reflectWidth, sh,
-                         -leftPad, topPad, reflectWidth, sh);
-            ctx.restore();
-        }
-
-        // Right padding (отражаем справа)
-        if (rightPad > 0) {
-            const reflectWidth = Math.min(rightPad, sw);
-            const sourceX = sx + sw - reflectWidth;
-            const destX = leftPad + sw;
-            ctx.save();
-            ctx.scale(-1, 1);
-            ctx.drawImage(source, sourceX, sy, reflectWidth, sh,
-                         -(destX + reflectWidth), topPad, reflectWidth, sh);
-            ctx.restore();
-        }
-
-        // Corner padding (углы с двойным отражением)
-        // Top-left corner
-        if (topPad > 0 && leftPad > 0) {
-            const w = Math.min(leftPad, sw);
-            const h = Math.min(topPad, sh);
-            ctx.save();
-            ctx.scale(-1, -1);
-            ctx.drawImage(source, sx, sy, w, h, -(leftPad), -(topPad), w, h);
-            ctx.restore();
-        }
-
-        // Top-right corner
-        if (topPad > 0 && rightPad > 0) {
-            const w = Math.min(rightPad, sw);
-            const h = Math.min(topPad, sh);
-            const sourceX = sx + sw - w;
-            const destX = leftPad + sw;
-            ctx.save();
-            ctx.scale(-1, -1);
-            ctx.drawImage(source, sourceX, sy, w, h, -(destX + w), -(topPad), w, h);
-            ctx.restore();
-        }
-
-        // Bottom-left corner
-        if (bottomPad > 0 && leftPad > 0) {
-            const w = Math.min(leftPad, sw);
-            const h = Math.min(bottomPad, sh);
-            const sourceY = sy + sh - h;
-            const destY = topPad + sh;
-            ctx.save();
-            ctx.scale(-1, -1);
-            ctx.drawImage(source, sx, sourceY, w, h, -(leftPad), -(destY + h), w, h);
-            ctx.restore();
-        }
-
-        // Bottom-right corner
-        if (bottomPad > 0 && rightPad > 0) {
-            const w = Math.min(rightPad, sw);
-            const h = Math.min(bottomPad, sh);
-            const sourceX = sx + sw - w;
-            const sourceY = sy + sh - h;
-            const destX = leftPad + sw;
-            const destY = topPad + sh;
-            ctx.save();
-            ctx.scale(-1, -1);
-            ctx.drawImage(source, sourceX, sourceY, w, h, -(destX + w), -(destY + h), w, h);
-            ctx.restore();
-        }
+        return resizedPixels;
     }
 
     /**
-     * Letterbox resize с сохранением пропорций
-     * Порт из ImagePreprocessor.LetterboxResize()
+     * Конвертирует RGBA в CHW Float32Array с нормализацией
+     * Точный порт из C# ImagePreprocessor.PreprocessWithExpansion() шаги 4
+     * @param {Uint8ClampedArray} pixels - Пиксели в формате RGBA
+     * @param {number} size - Размер изображения (128)
+     * @returns {Float32Array} - Тензор в формате CHW
      */
-    static letterboxResize(sourceCanvas, newSize) {
-        const oldW = sourceCanvas.width;
-        const oldH = sourceCanvas.height;
-
-        const ratio = newSize / Math.max(oldH, oldW);
-        const scaledH = Math.floor(oldH * ratio);
-        const scaledW = Math.floor(oldW * ratio);
-
-        const canvas = document.createElement('canvas');
-        canvas.width = newSize;
-        canvas.height = newSize;
-        const ctx = canvas.getContext('2d');
-
-        // Выбор интерполяции (в браузере всегда bilinear, но можем использовать imageSmoothingQuality)
-        ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = ratio > 1.0 ? 'high' : 'medium'; // LANCZOS4 vs AREA
-
-        // Вычисляем padding для центрирования
-        const deltaW = newSize - scaledW;
-        const deltaH = newSize - scaledH;
-        const top = Math.floor(deltaH / 2);
-        const left = Math.floor(deltaW / 2);
-
-        // Применяем reflection padding к фону
-        // (упрощённая версия, заполняем чёрным, т.к. модель нормализована)
-        ctx.fillStyle = '#000000';
-        ctx.fillRect(0, 0, newSize, newSize);
-
-        // Рисуем масштабированное изображение
-        ctx.drawImage(sourceCanvas, 0, 0, oldW, oldH, left, top, scaledW, scaledH);
-
-        // Применяем reflect padding для границ (упрощённо)
-        // Для полной точности нужно отражать края, но это добавляет сложности
-        // В продакшене можно улучшить эту часть
-
-        return canvas;
-    }
-
-    /**
-     * Конвертирует canvas в Float32Array CHW тензор с нормализацией
-     * Порт из ImagePreprocessor.PreprocessWithExpansion() шаг 4
-     */
-    static convertToTensorCHW(canvas) {
-        // Проверяем, что canvas имеет правильный размер
-        if (canvas.width !== this.INPUT_SIZE || canvas.height !== this.INPUT_SIZE) {
-            throw new Error(`Canvas size mismatch: expected ${this.INPUT_SIZE}x${this.INPUT_SIZE}, got ${canvas.width}x${canvas.height}`);
-        }
-
-        const ctx = canvas.getContext('2d');
-        const imageData = ctx.getImageData(0, 0, this.INPUT_SIZE, this.INPUT_SIZE);
-        const pixels = imageData.data; // RGBA format
-
-        const size = this.INPUT_SIZE;
+    static convertRGBAToCHW(pixels, size) {
         const tensor = new Float32Array(this.TENSOR_LENGTH);
 
         // HWC → CHW + нормализация /255
-        // Canvas даёт RGBA, нам нужен RGB
-        for (let c = 0; c < 3; c++) { // R, G, B (игнорируем A)
+        // Точно как в C# коде (строки 41-53)
+        for (let c = 0; c < 3; c++) {
             const channelOffset = c * size * size;
             for (let h = 0; h < size; h++) {
                 const rowOffset = h * size;
                 for (let w = 0; w < size; w++) {
+                    // HWC индекс: (h * width + w) * channels + c
                     const pixelIndex = (h * size + w) * 4; // RGBA stride
                     const value = pixels[pixelIndex + c]; // R=0, G=1, B=2
                     tensor[channelOffset + rowOffset + w] = value / 255.0;
