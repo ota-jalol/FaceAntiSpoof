@@ -79,14 +79,21 @@ php -S localhost:8000
 - Убедитесь, что в `main.js` используется `best_model.onnx` (FP32), а не `best_model_quantized.onnx` (INT8)
 - Проверьте, что файл `models/best_model.onnx` существует (размер ~1.9 MB)
 
+**Проблема**: "invalid input shape" ошибка в batch-normalization
+
+**Решение**:
+- Эта ошибка означает несовместимость WebGL execution provider с BatchNormalization оператором
+- Проверьте, что в `antiSpoof.js` используется только `['wasm']` execution provider (не `['webgl', 'wasm']`)
+- Это уже исправлено в текущей версии кода
+
 ### Низкая производительность
 
 **Проблема**: FPS < 10, тормозит
 
 **Решение**:
-1. Включите "Use GPU (WebGL)" если отключено
+1. ⚠️ WebGL отключен из-за несовместимости (используется WASM CPU-only)
 2. Закройте другие вкладки браузера
-3. Используйте Chrome (лучшая оптимизация)
+3. Используйте Chrome (лучшая оптимизация WASM)
 
 ### CORS ошибки
 
@@ -165,7 +172,7 @@ Face Anti-Spoof Browser Application
 BlazeFace загружен успешно
 Загрузка модели антиспуфинга: models/best_model.onnx
 Модель загружена. Вход: input, Выход: output
-Execution providers: ["webgl", "wasm"]
+Execution providers: ["wasm"]
 Все модели загружены
 Камера инициализирована: 640x480
 ```

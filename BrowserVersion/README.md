@@ -120,6 +120,9 @@ Canvas overlay (зелёная/красная рамка)
 5. **Модель**: best_model_quantized.onnx (INT8) → best_model.onnx (FP32)
    - ⚠️ ONNX Runtime Web не поддерживает `DynamicQuantizeLinear` оператор
    - Используется FP32 модель (1.9 MB) вместо INT8 (612 KB)
+6. **Execution Provider**: DirectML/CUDA → WASM (CPU only)
+   - ⚠️ WebGL backend имеет проблемы с BatchNormalization оператором
+   - Используется только WASM для стабильности
 
 ### Критические детали портирования
 
@@ -134,7 +137,7 @@ Canvas overlay (зелёная/красная рамка)
 
 ### UI настройки
 
-- **Use GPU (WebGL)**: Включить GPU-ускорение через WebGL
+- **Use GPU (WebGL)**: ⚠️ Не используется (отключено из-за несовместимости)
 - **Threshold**: Порог классификации (0.0 - 1.0, default: 0.5)
 
 ### Программные настройки
@@ -222,6 +225,7 @@ document.body.appendChild(debugCanvas); // Показать предобрабо
 3. **HTTPS**: Камера требует HTTPS (кроме localhost)
 4. **Firefox**: Может требовать явного разрешения камеры в настройках
 5. **Квантизованная модель**: INT8 модель (best_model_quantized.onnx) несовместима с ONNX Runtime Web из-за оператора `DynamicQuantizeLinear`. Используется FP32 модель.
+6. **WebGL Backend**: WebGL execution provider несовместим с BatchNormalization в MiniFASNet модели. Используется только WASM (CPU).
 
 ## 📝 Лицензия и авторство
 
