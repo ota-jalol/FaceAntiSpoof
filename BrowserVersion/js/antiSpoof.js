@@ -23,8 +23,10 @@ class AntiSpoofService {
             console.log('Загрузка модели антиспуфинга:', modelPath);
 
             // Настройка ONNX Runtime
+            // WebGL может иметь проблемы с некоторыми операторами (например, BatchNormalization)
+            // Используем только WASM для стабильности
             const options = {
-                executionProviders: useGpu ? ['webgl', 'wasm'] : ['wasm'],
+                executionProviders: ['wasm'],
                 graphOptimizationLevel: 'all',
                 enableCpuMemArena: true,
                 enableMemPattern: true,

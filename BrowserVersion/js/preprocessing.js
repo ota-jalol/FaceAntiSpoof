@@ -237,8 +237,13 @@ class ImagePreprocessor {
      * Порт из ImagePreprocessor.PreprocessWithExpansion() шаг 4
      */
     static convertToTensorCHW(canvas) {
+        // Проверяем, что canvas имеет правильный размер
+        if (canvas.width !== this.INPUT_SIZE || canvas.height !== this.INPUT_SIZE) {
+            throw new Error(`Canvas size mismatch: expected ${this.INPUT_SIZE}x${this.INPUT_SIZE}, got ${canvas.width}x${canvas.height}`);
+        }
+
         const ctx = canvas.getContext('2d');
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const imageData = ctx.getImageData(0, 0, this.INPUT_SIZE, this.INPUT_SIZE);
         const pixels = imageData.data; // RGBA format
 
         const size = this.INPUT_SIZE;
