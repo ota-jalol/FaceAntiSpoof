@@ -112,7 +112,8 @@ class ImagePreprocessor {
     }
 
     /**
-     * Letterbox resize с сохранением пропорций без canvas
+     * Letterbox resize с сохранением пропорций и BORDER_REFLECT_101 padding
+     * Точный порт из C# ImagePreprocessor.LetterboxResize()
      * @param {Uint8ClampedArray} sourcePixels - Исходные пиксели
      * @param {number} sourceSize - Размер исходного изображения
      * @param {number} targetSize - Целевой размер (128)
@@ -122,14 +123,12 @@ class ImagePreprocessor {
         // Вычисляем параметры resize
         const ratio = targetSize / sourceSize;
         const scaledSize = Math.floor(sourceSize * ratio);
-        const offset = Math.floor((targetSize - scaledSize) / 2);
+        const top = Math.floor((targetSize - scaledSize) / 2);
+        const left = top; // Для квадратного изображения top == left
 
-        const resizedPixels = new Uint8ClampedArray(targetSize * targetSize * 4);
+        // Сначала применяем bilinear интерполяцию для центрального региона
+        const scaledPixels = new Uint8ClampedArray(scaledSize * scaledSize * 4);
 
-        // Заполняем чёрным фоном
-        resizedPixels.fill(0);
-
-        // Применяем bilinear интерполяцию для resize
         for (let h = 0; h < scaledSize; h++) {
             for (let w = 0; w < scaledSize; w++) {
                 // Вычисляем координаты в исходном изображении
@@ -151,8 +150,8 @@ class ImagePreprocessor {
                 const idx10 = (y1 * sourceSize + x0) * 4;
                 const idx11 = (y1 * sourceSize + x1) * 4;
 
-                // Целевой индекс с учётом padding
-                const dstIndex = ((h + offset) * targetSize + (w + offset)) * 4;
+                // Целевой индекс в scaledPixels
+                const dstIndex = (h * scaledSize + w) * 4;
 
                 // Интерполяция для каждого канала (RGB)
                 for (let c = 0; c < 3; c++) {
@@ -165,9 +164,46 @@ class ImagePreprocessor {
                     const v1 = v10 * (1 - fx) + v11 * fx;
                     const value = v0 * (1 - fy) + v1 * fy;
 
-                    resizedPixels[dstIndex + c] = Math.round(value);
+                    scaledPixels[dstIndex + c] = Math.round(value);
                 }
-                resizedPixels[dstIndex + 3] = 255; // Alpha
+                scaledPixels[dstIndex + 3] = 255; // Alpha
+            }
+        }
+
+        // Применяем BORDER_REFLECT_101 padding как в C# (CopyMakeBorder)
+        const resizedPixels = new Uint8ClampedArray(targetSize * targetSize * 4);
+
+        for (let h = 0; h < targetSize; h++) {
+            for (let w = 0; w < targetSize; w++) {
+                // Координаты в scaledPixels (с учётом offset)
+                let srcH = h - top;
+                let srcW = w - left;
+
+                // Применяем BORDER_REFLECT_101
+                if (srcH < 0) {
+                    srcH = -srcH - 1;
+                } else if (srcH >= scaledSize) {
+                    srcH = 2 * scaledSize - srcH - 1;
+                }
+
+                if (srcW < 0) {
+                    srcW = -srcW - 1;
+                } else if (srcW >= scaledSize) {
+                    srcW = 2 * scaledSize - srcW - 1;
+                }
+
+                // Клиппинг на всякий случай
+                srcH = Math.max(0, Math.min(scaledSize - 1, srcH));
+                srcW = Math.max(0, Math.min(scaledSize - 1, srcW));
+
+                // Копируем пиксель
+                const srcIndex = (srcH * scaledSize + srcW) * 4;
+                const dstIndex = (h * targetSize + w) * 4;
+
+                resizedPixels[dstIndex] = scaledPixels[srcIndex];         // R
+                resizedPixels[dstIndex + 1] = scaledPixels[srcIndex + 1]; // G
+                resizedPixels[dstIndex + 2] = scaledPixels[srcIndex + 2]; // B
+                resizedPixels[dstIndex + 3] = 255;                         // A
             }
         }
 

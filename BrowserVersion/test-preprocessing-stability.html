@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Preprocessing Stability Test</title>
+    <style>
+        body {
+            font-family: 'Courier New', monospace;
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 20px;
+            background: #1e1e1e;
+            color: #d4d4d4;
+        }
+        h1 { color: #4ec9b0; }
+        .test-section {
+            background: #252526;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            border: 1px solid #3e3e42;
+        }
+        .pass { color: #4ec9b0; font-weight: bold; }
+        .fail { color: #f48771; font-weight: bold; }
+        canvas {
+            border: 1px solid #3e3e42;
+            margin: 10px 5px;
+        }
+        pre {
+            background: #1e1e1e;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-size: 12px;
+        }
+        button {
+            background: #0e639c;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover { background: #1177bb; }
+    </style>
+</head>
+<body>
+    <h1>🔬 Preprocessing Pipeline Stability Test</h1>
+    <p>Проверка стабильности и корректности предобработки изображений</p>
+
+    <div class="test-section">
+        <h2>1. Тест детерминированности (отсутствие случайных значений)</h2>
+        <p>Проверяем, что одно и то же изображение даёт идентичный тензор при повторных обработках</p>
+        <button onclick="runDeterminismTest()">Запустить тест</button>
+        <div id="determinism-results"></div>
+        <canvas id="testCanvas1" width="128" height="128"></canvas>
+    </div>
+
+    <div class="test-section">
+        <h2>2. Тест BORDER_REFLECT_101 padding</h2>
+        <p>Проверяем корректность отражающего padding</p>
+        <button onclick="runReflectionTest()">Запустить тест</button>
+        <div id="reflection-results"></div>
+        <canvas id="testCanvas2" width="128" height="128"></canvas>
+        <canvas id="reflectedCanvas" width="128" height="128"></canvas>
+    </div>
+
+    <div class="test-section">
+        <h2>3. Тест диапазона значений</h2>
+        <p>Проверяем, что все значения в диапазоне [0, 1] и нет NaN/Infinity</p>
+        <button onclick="runRangeTest()">Запустить тест</button>
+        <div id="range-results"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>4. Тест CHW формата</h2>
+        <p>Проверяем корректность преобразования HWC → CHW</p>
+        <button onclick="runCHWTest()">Запустить тест</button>
+        <div id="chw-results"></div>
+        <div>
+            <canvas id="channelR" width="128" height="128"></canvas>
+            <canvas id="channelG" width="128" height="128"></canvas>
+            <canvas id="channelB" width="128" height="128"></canvas>
+        </div>
+    </div>
+
+    <script src="js/preprocessing.js"></script>
+    <script>
+        // Утилита для создания тестового изображения
+        function createTestImage(canvas, pattern = 'gradient') {
+            const ctx = canvas.getContext('2d');
+            const size = canvas.width;
+
+            if (pattern === 'gradient') {
+                // Градиент для тестирования интерполяции
+                const gradient = ctx.createLinearGradient(0, 0, size, size);
+                gradient.addColorStop(0, '#ff0000');
+                gradient.addColorStop(0.5, '#00ff00');
+                gradient.addColorStop(1, '#0000ff');
+                ctx.fillStyle = gradient;
+                ctx.fillRect(0, 0, size, size);
+            } else if (pattern === 'checkerboard') {
+                // Шахматная доска для тестирования padding
+                const cellSize = 16;
+                for (let y = 0; y < size; y += cellSize) {
+                    for (let x = 0; x < size; x += cellSize) {
+                        const isBlack = ((x / cellSize) + (y / cellSize)) % 2 === 0;
+                        ctx.fillStyle = isBlack ? '#000000' : '#ffffff';
+                        ctx.fillRect(x, y, cellSize, cellSize);
+                    }
+                }
+            } else if (pattern === 'solid') {
+                // Однородный цвет
+                ctx.fillStyle = '#ff8800';
+                ctx.fillRect(0, 0, size, size);
+            }
+        }
+
+        // Тест 1: Детерминированность
+        function runDeterminismTest() {
+            const results = document.getElementById('determinism-results');
+            results.innerHTML = '<p>⏳ Выполняется...</p>';
+
+            try {
+                const canvas = document.getElementById('testCanvas1');
+                createTestImage(canvas, 'gradient');
+
+                const bbox = { x: 10, y: 10, width: 100, height: 80 };
+
+                // Запускаем предобработку 5 раз
+                const tensors = [];
+                for (let i = 0; i < 5; i++) {
+                    const tensor = ImagePreprocessor.preprocess(canvas, bbox, 1.5);
+                    tensors.push(tensor);
+                }
+
+                // Проверяем, что все тензоры идентичны
+                let allIdentical = true;
+                const firstTensor = tensors[0];
+
+                for (let i = 1; i < tensors.length; i++) {
+                    for (let j = 0; j < firstTensor.length; j++) {
+                        if (Math.abs(firstTensor[j] - tensors[i][j]) > 1e-6) {
+                            allIdentical = false;
+                            results.innerHTML = `<p class="fail">❌ FAIL: Обнаружены различия на позиции ${j}</p>
+                                <pre>Run 0: ${firstTensor[j]}\nRun ${i}: ${tensors[i][j]}</pre>`;
+                            return;
+                        }
+                    }
+                }
+
+                if (allIdentical) {
+                    results.innerHTML = `<p class="pass">✅ PASS: Все 5 запусков дали идентичные результаты</p>
+                        <pre>Проверено ${firstTensor.length} значений\nПервые 10 значений: [${Array.from(firstTensor.slice(0, 10)).map(v => v.toFixed(4)).join(', ')}]</pre>`;
+                }
+
+            } catch (error) {
+                results.innerHTML = `<p class="fail">❌ ERROR: ${error.message}</p>`;
+            }
+        }
+
+        // Тест 2: BORDER_REFLECT_101
+        function runReflectionTest() {
+            const results = document.getElementById('reflection-results');
+            results.innerHTML = '<p>⏳ Выполняется...</p>';
+
+            try {
+                const canvas = document.getElementById('testCanvas2');
+                createTestImage(canvas, 'checkerboard');
+
+                // Создаём bbox, который выходит за границы изображения
+                const bbox = { x: -20, y: -20, width: 100, height: 100 };
+
+                const tensor = ImagePreprocessor.preprocess(canvas, bbox, 1.5);
+
+                // Визуализируем результат
+                const reflectedCanvas = document.getElementById('reflectedCanvas');
+                ImagePreprocessor.visualizeTensor(tensor, reflectedCanvas);
+
+                // Проверяем, что padding не чёрный (все значения не 0)
+                const hasNonZeroPadding = Array.from(tensor).some(v => v > 0.01);
+
+                if (hasNonZeroPadding) {
+                    results.innerHTML = `<p class="pass">✅ PASS: BORDER_REFLECT_101 применён корректно</p>
+                        <pre>Обнаружены ненулевые значения в padding регионе\nМинимум: ${Math.min(...tensor).toFixed(4)}, Максимум: ${Math.max(...tensor).toFixed(4)}</pre>`;
+                } else {
+                    results.innerHTML = `<p class="fail">❌ FAIL: Padding содержит только нули (должен быть reflect)</p>`;
+                }
+
+            } catch (error) {
+                results.innerHTML = `<p class="fail">❌ ERROR: ${error.message}</p>`;
+            }
+        }
+
+        // Тест 3: Диапазон значений
+        function runRangeTest() {
+            const results = document.getElementById('range-results');
+            results.innerHTML = '<p>⏳ Выполняется...</p>';
+
+            try {
+                const canvas = document.createElement('canvas');
+                canvas.width = canvas.height = 128;
+                createTestImage(canvas, 'solid');
+
+                const bbox = { x: 20, y: 20, width: 80, height: 80 };
+                const tensor = ImagePreprocessor.preprocess(canvas, bbox, 1.5);
+
+                // Проверки
+                const checks = [
+                    {
+                        name: 'Нет NaN',
+                        pass: !Array.from(tensor).some(v => isNaN(v))
+                    },
+                    {
+                        name: 'Нет Infinity',
+                        pass: !Array.from(tensor).some(v => !isFinite(v))
+                    },
+                    {
+                        name: 'Все значения >= 0',
+                        pass: Array.from(tensor).every(v => v >= 0)
+                    },
+                    {
+                        name: 'Все значения <= 1',
+                        pass: Array.from(tensor).every(v => v <= 1)
+                    },
+                    {
+                        name: 'Есть ненулевые значения',
+                        pass: Array.from(tensor).some(v => v > 0)
+                    }
+                ];
+
+                const min = Math.min(...tensor);
+                const max = Math.max(...tensor);
+                const mean = tensor.reduce((a, b) => a + b, 0) / tensor.length;
+
+                const allPassed = checks.every(c => c.pass);
+                let html = allPassed
+                    ? '<p class="pass">✅ PASS: Все проверки пройдены</p>'
+                    : '<p class="fail">❌ FAIL: Некоторые проверки не пройдены</p>';
+
+                html += '<ul>';
+                checks.forEach(check => {
+                    html += `<li class="${check.pass ? 'pass' : 'fail'}">${check.pass ? '✅' : '❌'} ${check.name}</li>`;
+                });
+                html += '</ul>';
+                html += `<pre>Статистика:\n  Min: ${min.toFixed(6)}\n  Max: ${max.toFixed(6)}\n  Mean: ${mean.toFixed(6)}</pre>`;
+
+                results.innerHTML = html;
+
+            } catch (error) {
+                results.innerHTML = `<p class="fail">❌ ERROR: ${error.message}</p>`;
+            }
+        }
+
+        // Тест 4: CHW формат
+        function runCHWTest() {
+            const results = document.getElementById('chw-results');
+            results.innerHTML = '<p>⏳ Выполняется...</p>';
+
+            try {
+                const canvas = document.createElement('canvas');
+                canvas.width = canvas.height = 128;
+                const ctx = canvas.getContext('2d');
+
+                // Создаём изображение с известными цветами
+                ctx.fillStyle = '#ff0000'; // Красный
+                ctx.fillRect(0, 0, 64, 64);
+                ctx.fillStyle = '#00ff00'; // Зелёный
+                ctx.fillRect(64, 0, 64, 64);
+                ctx.fillStyle = '#0000ff'; // Синий
+                ctx.fillRect(0, 64, 64, 64);
+                ctx.fillStyle = '#ffff00'; // Жёлтый (R+G)
+                ctx.fillRect(64, 64, 64, 64);
+
+                const bbox = { x: 0, y: 0, width: 128, height: 128 };
+                const tensor = ImagePreprocessor.preprocess(canvas, bbox, 1.0);
+
+                // Визуализируем каждый канал отдельно
+                const size = ImagePreprocessor.INPUT_SIZE;
+                const channels = ['R', 'G', 'B'];
+
+                for (let c = 0; c < 3; c++) {
+                    const canvasId = ['channelR', 'channelG', 'channelB'][c];
+                    const channelCanvas = document.getElementById(canvasId);
+                    const ctx = channelCanvas.getContext('2d');
+                    const imageData = ctx.createImageData(size, size);
+
+                    // Извлекаем канал из CHW формата
+                    const channelOffset = c * size * size;
+                    for (let h = 0; h < size; h++) {
+                        for (let w = 0; w < size; w++) {
+                            const tensorIndex = channelOffset + h * size + w;
+                            const value = Math.floor(tensor[tensorIndex] * 255);
+                            const pixelIndex = (h * size + w) * 4;
+                            imageData.data[pixelIndex] = value;
+                            imageData.data[pixelIndex + 1] = value;
+                            imageData.data[pixelIndex + 2] = value;
+                            imageData.data[pixelIndex + 3] = 255;
+                        }
+                    }
+                    ctx.putImageData(imageData, 0, 0);
+                }
+
+                // Проверяем, что красный квадрат имеет высокие значения в канале R
+                const redRegionR = tensor[0 * size * size + 32 * size + 32]; // Центр красного квадранта
+                const redRegionG = tensor[1 * size * size + 32 * size + 32];
+                const redRegionB = tensor[2 * size * size + 32 * size + 32];
+
+                const correctCHW = redRegionR > 0.8 && redRegionG < 0.2 && redRegionB < 0.2;
+
+                if (correctCHW) {
+                    results.innerHTML = `<p class="pass">✅ PASS: CHW формат корректен</p>
+                        <pre>Красный квадрант (центр):\n  R: ${redRegionR.toFixed(4)} (должно быть ~1.0)\n  G: ${redRegionG.toFixed(4)} (должно быть ~0.0)\n  B: ${redRegionB.toFixed(4)} (должно быть ~0.0)</pre>
+                        <p>Визуализация каналов (слева направо: R, G, B):</p>`;
+                } else {
+                    results.innerHTML = `<p class="fail">❌ FAIL: CHW формат некорректен</p>
+                        <pre>Красный квадрант:\n  R: ${redRegionR.toFixed(4)}\n  G: ${redRegionG.toFixed(4)}\n  B: ${redRegionB.toFixed(4)}</pre>`;
+                }
+
+            } catch (error) {
+                results.innerHTML = `<p class="fail">❌ ERROR: ${error.message}</p>`;
+            }
+        }
+
+        // Автозапуск при загрузке
+        window.addEventListener('DOMContentLoaded', () => {
+            console.log('Preprocessing Stability Test Suite загружен');
+            console.log('Нажмите кнопки для запуска тестов');
+        });
+    </script>
+</body>
+</html>
