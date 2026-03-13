@@ -72,6 +72,13 @@ php -S localhost:8000
 2. Проверьте, что сервер запущен в корне `BrowserVersion/`
 3. Откройте DevTools (F12) и проверьте вкладку Network
 
+**Проблема**: "cannot resolve operator 'DynamicQuantizeLinear'" в консоли
+
+**Решение**:
+- Эта ошибка означает, что используется несовместимая квантизованная модель
+- Убедитесь, что в `main.js` используется `best_model.onnx` (FP32), а не `best_model_quantized.onnx` (INT8)
+- Проверьте, что файл `models/best_model.onnx` существует (размер ~1.9 MB)
+
 ### Низкая производительность
 
 **Проблема**: FPS < 10, тормозит
