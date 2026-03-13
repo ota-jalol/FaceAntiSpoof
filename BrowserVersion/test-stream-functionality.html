@@ -1,0 +1,887 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stream Functionality Test - Face Anti-Spoof</title>
+    <style>
+        body {
+            font-family: 'Courier New', monospace;
+            max-width: 1400px;
+            margin: 20px auto;
+            padding: 20px;
+            background: #1e1e1e;
+            color: #d4d4d4;
+        }
+        h1 {
+            color: #4ec9b0;
+            text-align: center;
+        }
+        .test-section {
+            background: #252526;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            border: 1px solid #3e3e42;
+        }
+        .test-section h2 {
+            color: #569cd6;
+            margin-top: 0;
+        }
+        .pass {
+            color: #4ec9b0;
+            font-weight: bold;
+        }
+        .fail {
+            color: #f48771;
+            font-weight: bold;
+        }
+        .warn {
+            color: #dcdcaa;
+            font-weight: bold;
+        }
+        .info {
+            color: #9cdcfe;
+        }
+        button {
+            background: #0e639c;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        button:hover {
+            background: #1177bb;
+        }
+        button:disabled {
+            background: #3e3e42;
+            cursor: not-allowed;
+        }
+        pre {
+            background: #1e1e1e;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-size: 12px;
+        }
+        .video-container {
+            display: flex;
+            gap: 20px;
+            margin: 20px 0;
+        }
+        video, canvas {
+            border: 2px solid #3e3e42;
+            border-radius: 8px;
+            max-width: 45%;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+            margin: 15px 0;
+        }
+        .stat-item {
+            background: #1e1e1e;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .stat-label {
+            color: #858585;
+            font-size: 12px;
+        }
+        .stat-value {
+            color: #4ec9b0;
+            font-size: 18px;
+            font-weight: bold;
+        }
+        .test-result {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            border-left: 4px solid;
+        }
+        .test-result.pass {
+            border-color: #4ec9b0;
+            background: rgba(78, 201, 176, 0.1);
+        }
+        .test-result.fail {
+            border-color: #f48771;
+            background: rgba(244, 135, 113, 0.1);
+        }
+        .test-result.warn {
+            border-color: #dcdcaa;
+            background: rgba(220, 220, 170, 0.1);
+        }
+    </style>
+</head>
+<body>
+    <h1>🎥 Stream Functionality Validation Test</h1>
+    <p style="text-align: center;">Комплексная проверка работы с видеопотоками (camera stream)</p>
+
+    <!-- Test 1: Camera Access -->
+    <div class="test-section">
+        <h2>1. Тест доступа к камере (getUserMedia API)</h2>
+        <p>Проверяем, что браузер поддерживает WebRTC и может получить доступ к камере</p>
+        <button onclick="testCameraAccess()">Запустить тест</button>
+        <div id="camera-test-results"></div>
+    </div>
+
+    <!-- Test 2: Stream Properties -->
+    <div class="test-section">
+        <h2>2. Тест свойств видеопотока</h2>
+        <p>Проверяем параметры потока: разрешение, частота кадров, статус треков</p>
+        <button onclick="testStreamProperties()">Запустить тест</button>
+        <button onclick="stopAllStreams()">Остановить потоки</button>
+        <div id="stream-props-results"></div>
+        <div class="video-container">
+            <video id="test-video" autoplay playsinline></video>
+        </div>
+    </div>
+
+    <!-- Test 3: Frame Processing -->
+    <div class="test-section">
+        <h2>3. Тест обработки кадров</h2>
+        <p>Проверяем непрерывную обработку кадров из потока через requestAnimationFrame</p>
+        <button onclick="testFrameProcessing()">Запустить тест (10 сек)</button>
+        <button onclick="stopFrameProcessing()">Остановить</button>
+        <div id="frame-processing-results"></div>
+        <div class="stats" id="frame-stats"></div>
+        <canvas id="test-canvas" width="640" height="480"></canvas>
+    </div>
+
+    <!-- Test 4: Face Detection on Stream -->
+    <div class="test-section">
+        <h2>4. Тест детекции лиц на потоке</h2>
+        <p>Проверяем работу BlazeFace детектора на реальном видеопотоке</p>
+        <button onclick="testFaceDetectionStream()">Запустить тест (15 сек)</button>
+        <button onclick="stopFaceDetection()">Остановить</button>
+        <div id="face-detection-results"></div>
+        <div class="stats" id="face-stats"></div>
+        <div class="video-container">
+            <video id="face-video" autoplay playsinline></video>
+            <canvas id="face-canvas" width="640" height="480"></canvas>
+        </div>
+    </div>
+
+    <!-- Test 5: Full Pipeline on Stream -->
+    <div class="test-section">
+        <h2>5. Тест полного пайплайна (детекция + антиспуфинг)</h2>
+        <p>Проверяем работу полного пайплайна: camera → face detection → preprocessing → anti-spoof classification</p>
+        <button onclick="testFullPipeline()">Запустить тест (20 сек)</button>
+        <button onclick="stopFullPipeline()">Остановить</button>
+        <div id="pipeline-results"></div>
+        <div class="stats" id="pipeline-stats"></div>
+        <div class="video-container">
+            <video id="pipeline-video" autoplay playsinline></video>
+            <canvas id="pipeline-canvas" width="640" height="480"></canvas>
+        </div>
+    </div>
+
+    <!-- Test 6: Performance Metrics -->
+    <div class="test-section">
+        <h2>6. Тест производительности потока</h2>
+        <p>Измеряем FPS, задержки, использование памяти при обработке потока</p>
+        <button onclick="testStreamPerformance()">Запустить тест (30 сек)</button>
+        <button onclick="stopPerformance()">Остановить</button>
+        <div id="performance-results"></div>
+        <div class="stats" id="performance-stats"></div>
+    </div>
+
+    <!-- Test 7: Stream Cleanup -->
+    <div class="test-section">
+        <h2>7. Тест корректного освобождения ресурсов</h2>
+        <p>Проверяем, что все треки останавливаются и ресурсы освобождаются</p>
+        <button onclick="testStreamCleanup()">Запустить тест</button>
+        <div id="cleanup-results"></div>
+    </div>
+
+    <!-- Dependencies -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.15.0/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface@0.0.7/dist/blazeface.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.0/dist/ort.min.js"></script>
+
+    <!-- Application Scripts -->
+    <script src="js/preprocessing.js"></script>
+    <script src="js/antiSpoof.js"></script>
+    <script src="js/faceDetector.js"></script>
+
+    <script>
+        // Global state
+        let currentStream = null;
+        let frameProcessingActive = false;
+        let faceDetectionActive = false;
+        let pipelineActive = false;
+        let performanceActive = false;
+        let animationId = null;
+
+        // Test utilities
+        function log(elementId, message, type = 'info') {
+            const element = document.getElementById(elementId);
+            const className = type === 'pass' ? 'pass' : type === 'fail' ? 'fail' : type === 'warn' ? 'warn' : 'info';
+            const icon = type === 'pass' ? '✅' : type === 'fail' ? '❌' : type === 'warn' ? '⚠️' : 'ℹ️';
+            const div = document.createElement('div');
+            div.className = `test-result ${type}`;
+            div.innerHTML = `<span class="${className}">${icon} ${message}</span>`;
+            element.appendChild(div);
+        }
+
+        function clearLog(elementId) {
+            document.getElementById(elementId).innerHTML = '';
+        }
+
+        function updateStats(elementId, stats) {
+            const element = document.getElementById(elementId);
+            element.innerHTML = '';
+            for (const [label, value] of Object.entries(stats)) {
+                const statItem = document.createElement('div');
+                statItem.className = 'stat-item';
+                statItem.innerHTML = `
+                    <div class="stat-label">${label}</div>
+                    <div class="stat-value">${value}</div>
+                `;
+                element.appendChild(statItem);
+            }
+        }
+
+        // Test 1: Camera Access
+        async function testCameraAccess() {
+            clearLog('camera-test-results');
+            log('camera-test-results', 'Запуск теста доступа к камере...', 'info');
+
+            try {
+                // Check API support
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                    log('camera-test-results', 'FAIL: navigator.mediaDevices.getUserMedia не поддерживается', 'fail');
+                    return;
+                }
+                log('camera-test-results', 'PASS: getUserMedia API поддерживается', 'pass');
+
+                // Check permissions API
+                if (navigator.permissions) {
+                    try {
+                        const permission = await navigator.permissions.query({ name: 'camera' });
+                        log('camera-test-results', `Статус разрешения камеры: ${permission.state}`, 'info');
+                    } catch (e) {
+                        log('camera-test-results', 'Permissions API недоступен', 'warn');
+                    }
+                }
+
+                // Try to get camera access
+                const constraints = {
+                    video: {
+                        width: { ideal: 640 },
+                        height: { ideal: 480 },
+                        facingMode: 'user'
+                    }
+                };
+
+                log('camera-test-results', 'Запрос доступа к камере...', 'info');
+                const stream = await navigator.mediaDevices.getUserMedia(constraints);
+
+                log('camera-test-results', 'PASS: Доступ к камере получен', 'pass');
+
+                const videoTrack = stream.getVideoTracks()[0];
+                const settings = videoTrack.getSettings();
+                log('camera-test-results', `Настройки трека: ${settings.width}x${settings.height}, ${settings.frameRate || 'N/A'} FPS`, 'info');
+
+                // Cleanup
+                stream.getTracks().forEach(track => track.stop());
+                log('camera-test-results', 'Поток остановлен', 'info');
+
+            } catch (error) {
+                log('camera-test-results', `FAIL: ${error.name}: ${error.message}`, 'fail');
+                if (error.name === 'NotAllowedError') {
+                    log('camera-test-results', 'Пользователь отклонил доступ к камере', 'warn');
+                } else if (error.name === 'NotFoundError') {
+                    log('camera-test-results', 'Камера не найдена', 'warn');
+                }
+            }
+        }
+
+        // Test 2: Stream Properties
+        async function testStreamProperties() {
+            clearLog('stream-props-results');
+            log('stream-props-results', 'Запуск теста свойств потока...', 'info');
+
+            try {
+                const video = document.getElementById('test-video');
+                const constraints = {
+                    video: {
+                        width: { ideal: 640 },
+                        height: { ideal: 480 },
+                        facingMode: 'user'
+                    }
+                };
+
+                currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+                video.srcObject = currentStream;
+
+                await new Promise(resolve => {
+                    video.onloadedmetadata = () => {
+                        video.play();
+                        resolve();
+                    };
+                });
+
+                log('stream-props-results', 'PASS: Видеопоток запущен', 'pass');
+
+                // Check video properties
+                log('stream-props-results', `Размер видео: ${video.videoWidth}x${video.videoHeight}`, 'info');
+                log('stream-props-results', `readyState: ${video.readyState}`, 'info');
+                log('stream-props-results', `paused: ${video.paused}`, 'info');
+
+                // Check tracks
+                const tracks = currentStream.getTracks();
+                log('stream-props-results', `Количество треков: ${tracks.length}`, 'info');
+
+                tracks.forEach((track, index) => {
+                    const settings = track.getSettings();
+                    log('stream-props-results',
+                        `Трек ${index + 1}: ${track.kind}, enabled: ${track.enabled}, muted: ${track.muted}, readyState: ${track.readyState}`,
+                        'info');
+
+                    if (track.kind === 'video' && settings) {
+                        log('stream-props-results',
+                            `  └─ Resolution: ${settings.width}x${settings.height}, FPS: ${settings.frameRate || 'N/A'}`,
+                            'info');
+                    }
+                });
+
+                // Check stream active
+                if (currentStream.active) {
+                    log('stream-props-results', 'PASS: Поток активен (stream.active === true)', 'pass');
+                } else {
+                    log('stream-props-results', 'FAIL: Поток не активен', 'fail');
+                }
+
+            } catch (error) {
+                log('stream-props-results', `FAIL: ${error.message}`, 'fail');
+            }
+        }
+
+        function stopAllStreams() {
+            if (currentStream) {
+                currentStream.getTracks().forEach(track => track.stop());
+                currentStream = null;
+                log('stream-props-results', 'Все потоки остановлены', 'info');
+            }
+        }
+
+        // Test 3: Frame Processing
+        async function testFrameProcessing() {
+            clearLog('frame-processing-results');
+            log('frame-processing-results', 'Запуск теста обработки кадров...', 'info');
+
+            try {
+                frameProcessingActive = true;
+                const video = document.createElement('video');
+                video.autoplay = true;
+                video.playsInline = true;
+
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                video.srcObject = stream;
+
+                await new Promise(resolve => {
+                    video.onloadedmetadata = () => {
+                        video.play();
+                        resolve();
+                    };
+                });
+
+                const canvas = document.getElementById('test-canvas');
+                const ctx = canvas.getContext('2d');
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+
+                let frameCount = 0;
+                let startTime = performance.now();
+                let lastUpdate = startTime;
+
+                function processFrame() {
+                    if (!frameProcessingActive) {
+                        stream.getTracks().forEach(track => track.stop());
+                        return;
+                    }
+
+                    frameCount++;
+                    const now = performance.now();
+
+                    // Draw frame to canvas
+                    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+                    // Update stats every 500ms
+                    if (now - lastUpdate >= 500) {
+                        const elapsed = (now - startTime) / 1000;
+                        const fps = Math.round(frameCount / elapsed);
+
+                        updateStats('frame-stats', {
+                            'Кадров обработано': frameCount,
+                            'Время работы': elapsed.toFixed(1) + ' сек',
+                            'FPS': fps,
+                            'Разрешение': `${canvas.width}x${canvas.height}`
+                        });
+
+                        lastUpdate = now;
+                    }
+
+                    animationId = requestAnimationFrame(processFrame);
+                }
+
+                log('frame-processing-results', 'PASS: Начата обработка кадров', 'pass');
+                processFrame();
+
+                // Auto-stop after 10 seconds
+                setTimeout(() => {
+                    if (frameProcessingActive) {
+                        stopFrameProcessing();
+                        const elapsed = (performance.now() - startTime) / 1000;
+                        const fps = Math.round(frameCount / elapsed);
+                        log('frame-processing-results',
+                            `Тест завершён: обработано ${frameCount} кадров за ${elapsed.toFixed(1)} сек (средний FPS: ${fps})`,
+                            'info');
+
+                        if (fps >= 20) {
+                            log('frame-processing-results', 'PASS: Производительность приемлема (FPS >= 20)', 'pass');
+                        } else {
+                            log('frame-processing-results', 'WARN: Низкая производительность (FPS < 20)', 'warn');
+                        }
+
+                        stream.getTracks().forEach(track => track.stop());
+                    }
+                }, 10000);
+
+            } catch (error) {
+                log('frame-processing-results', `FAIL: ${error.message}`, 'fail');
+                frameProcessingActive = false;
+            }
+        }
+
+        function stopFrameProcessing() {
+            frameProcessingActive = false;
+            if (animationId) {
+                cancelAnimationFrame(animationId);
+                animationId = null;
+            }
+        }
+
+        // Test 4: Face Detection on Stream
+        async function testFaceDetectionStream() {
+            clearLog('face-detection-results');
+            log('face-detection-results', 'Запуск теста детекции лиц...', 'info');
+
+            try {
+                faceDetectionActive = true;
+                const video = document.getElementById('face-video');
+                const canvas = document.getElementById('face-canvas');
+                const ctx = canvas.getContext('2d');
+
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                video.srcObject = stream;
+
+                await new Promise(resolve => {
+                    video.onloadedmetadata = () => {
+                        video.play();
+                        resolve();
+                    };
+                });
+
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+
+                log('face-detection-results', 'Инициализация BlazeFace модели...', 'info');
+                const detector = new FaceDetectorService();
+                await detector.initialize(0.5);
+                log('face-detection-results', 'PASS: BlazeFace модель загружена', 'pass');
+
+                let frameCount = 0;
+                let facesDetected = 0;
+                let totalFaces = 0;
+                const startTime = performance.now();
+
+                async function detectFaces() {
+                    if (!faceDetectionActive) {
+                        stream.getTracks().forEach(track => track.stop());
+                        return;
+                    }
+
+                    frameCount++;
+
+                    // Detect faces
+                    const faces = await detector.detectTopFaces(video, 3);
+
+                    if (faces.length > 0) {
+                        facesDetected++;
+                        totalFaces += faces.length;
+                    }
+
+                    // Draw
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    faces.forEach(face => {
+                        ctx.strokeStyle = '#00ff00';
+                        ctx.lineWidth = 2;
+                        ctx.strokeRect(face.x, face.y, face.width, face.height);
+                    });
+
+                    // Update stats
+                    const elapsed = (performance.now() - startTime) / 1000;
+                    const fps = Math.round(frameCount / elapsed);
+                    const detectionRate = ((facesDetected / frameCount) * 100).toFixed(1);
+
+                    updateStats('face-stats', {
+                        'Кадров обработано': frameCount,
+                        'Кадров с лицами': facesDetected,
+                        'Всего лиц обнаружено': totalFaces,
+                        'Процент детекции': detectionRate + '%',
+                        'FPS': fps
+                    });
+
+                    animationId = requestAnimationFrame(detectFaces);
+                }
+
+                detectFaces();
+
+                // Auto-stop after 15 seconds
+                setTimeout(() => {
+                    if (faceDetectionActive) {
+                        stopFaceDetection();
+                        const elapsed = (performance.now() - startTime) / 1000;
+                        log('face-detection-results',
+                            `Тест завершён: ${facesDetected} кадров с лицами из ${frameCount} (${((facesDetected/frameCount)*100).toFixed(1)}%)`,
+                            'info');
+
+                        if (facesDetected > 0) {
+                            log('face-detection-results', 'PASS: Детекция лиц работает на потоке', 'pass');
+                        } else {
+                            log('face-detection-results', 'WARN: Лица не обнаружены (возможно, нет человека в кадре)', 'warn');
+                        }
+
+                        stream.getTracks().forEach(track => track.stop());
+                    }
+                }, 15000);
+
+            } catch (error) {
+                log('face-detection-results', `FAIL: ${error.message}`, 'fail');
+                faceDetectionActive = false;
+            }
+        }
+
+        function stopFaceDetection() {
+            faceDetectionActive = false;
+            if (animationId) {
+                cancelAnimationFrame(animationId);
+                animationId = null;
+            }
+        }
+
+        // Test 5: Full Pipeline
+        async function testFullPipeline() {
+            clearLog('pipeline-results');
+            log('pipeline-results', 'Запуск теста полного пайплайна...', 'info');
+
+            try {
+                pipelineActive = true;
+                const video = document.getElementById('pipeline-video');
+                const canvas = document.getElementById('pipeline-canvas');
+                const ctx = canvas.getContext('2d');
+
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                video.srcObject = stream;
+
+                await new Promise(resolve => {
+                    video.onloadedmetadata = () => {
+                        video.play();
+                        resolve();
+                    };
+                });
+
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+
+                log('pipeline-results', 'Инициализация моделей...', 'info');
+                const detector = new FaceDetectorService();
+                await detector.initialize(0.5);
+
+                const antiSpoof = new AntiSpoofService();
+                await antiSpoof.initialize('models/best_model.onnx', false); // WASM only
+
+                log('pipeline-results', 'PASS: Все модели загружены', 'pass');
+
+                let frameCount = 0;
+                let classificationCount = 0;
+                let realCount = 0;
+                let spoofCount = 0;
+                let totalInferenceTime = 0;
+                const startTime = performance.now();
+
+                async function processPipeline() {
+                    if (!pipelineActive) {
+                        stream.getTracks().forEach(track => track.stop());
+                        return;
+                    }
+
+                    frameCount++;
+
+                    // 1. Detect faces
+                    const faces = await detector.detectTopFaces(video, 1);
+
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                    // 2. Classify each face
+                    if (faces.length > 0) {
+                        for (const face of faces) {
+                            const result = await antiSpoof.classify(video, face, 0.5, 1.5);
+                            classificationCount++;
+                            totalInferenceTime += result.inferenceTime;
+
+                            if (result.isReal) {
+                                realCount++;
+                            } else {
+                                spoofCount++;
+                            }
+
+                            // Draw
+                            const color = result.isReal ? '#00ff00' : '#ff0000';
+                            ctx.strokeStyle = color;
+                            ctx.lineWidth = 3;
+                            ctx.strokeRect(face.x, face.y, face.width, face.height);
+
+                            ctx.fillStyle = color;
+                            ctx.font = 'bold 16px Arial';
+                            ctx.fillText(
+                                `${result.isReal ? 'REAL' : 'SPOOF'} ${(result.realProb * 100).toFixed(1)}%`,
+                                face.x + 5,
+                                face.y - 5
+                            );
+                        }
+                    }
+
+                    // Update stats
+                    const elapsed = (performance.now() - startTime) / 1000;
+                    const fps = Math.round(frameCount / elapsed);
+                    const avgInference = classificationCount > 0 ? (totalInferenceTime / classificationCount).toFixed(1) : 'N/A';
+
+                    updateStats('pipeline-stats', {
+                        'Кадров обработано': frameCount,
+                        'Классификаций': classificationCount,
+                        'REAL': realCount,
+                        'SPOOF': spoofCount,
+                        'FPS': fps,
+                        'Средний inference': avgInference + ' ms'
+                    });
+
+                    animationId = requestAnimationFrame(processPipeline);
+                }
+
+                processPipeline();
+
+                // Auto-stop after 20 seconds
+                setTimeout(() => {
+                    if (pipelineActive) {
+                        stopFullPipeline();
+                        log('pipeline-results',
+                            `Тест завершён: ${classificationCount} классификаций из ${frameCount} кадров`,
+                            'info');
+
+                        if (classificationCount > 0) {
+                            log('pipeline-results', 'PASS: Полный пайплайн работает на потоке', 'pass');
+                            log('pipeline-results',
+                                `Результаты: REAL=${realCount}, SPOOF=${spoofCount}, avg=${(totalInferenceTime/classificationCount).toFixed(1)}ms`,
+                                'info');
+                        } else {
+                            log('pipeline-results', 'WARN: Классификации не выполнены (возможно, нет лица в кадре)', 'warn');
+                        }
+
+                        stream.getTracks().forEach(track => track.stop());
+                    }
+                }, 20000);
+
+            } catch (error) {
+                log('pipeline-results', `FAIL: ${error.message}`, 'fail');
+                pipelineActive = false;
+            }
+        }
+
+        function stopFullPipeline() {
+            pipelineActive = false;
+            if (animationId) {
+                cancelAnimationFrame(animationId);
+                animationId = null;
+            }
+        }
+
+        // Test 6: Performance
+        async function testStreamPerformance() {
+            clearLog('performance-results');
+            log('performance-results', 'Запуск теста производительности...', 'info');
+
+            try {
+                performanceActive = true;
+                const video = document.createElement('video');
+                video.autoplay = true;
+                video.playsInline = true;
+
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                video.srcObject = stream;
+
+                await new Promise(resolve => {
+                    video.onloadedmetadata = () => {
+                        video.play();
+                        resolve();
+                    };
+                });
+
+                const canvas = document.createElement('canvas');
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                const ctx = canvas.getContext('2d');
+
+                let frameCount = 0;
+                let minFrameTime = Infinity;
+                let maxFrameTime = 0;
+                let totalFrameTime = 0;
+                let lastFrameTime = performance.now();
+                const startTime = performance.now();
+
+                function measurePerformance() {
+                    if (!performanceActive) {
+                        stream.getTracks().forEach(track => track.stop());
+                        return;
+                    }
+
+                    const now = performance.now();
+                    const frameTime = now - lastFrameTime;
+
+                    frameCount++;
+                    totalFrameTime += frameTime;
+                    minFrameTime = Math.min(minFrameTime, frameTime);
+                    maxFrameTime = Math.max(maxFrameTime, frameTime);
+                    lastFrameTime = now;
+
+                    // Simulate work
+                    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+                    // Update stats
+                    const elapsed = (now - startTime) / 1000;
+                    const fps = Math.round(frameCount / elapsed);
+                    const avgFrameTime = (totalFrameTime / frameCount).toFixed(2);
+
+                    updateStats('performance-stats', {
+                        'FPS': fps,
+                        'Avg frame time': avgFrameTime + ' ms',
+                        'Min frame time': minFrameTime.toFixed(2) + ' ms',
+                        'Max frame time': maxFrameTime.toFixed(2) + ' ms',
+                        'Frames': frameCount,
+                        'Elapsed': elapsed.toFixed(1) + ' s'
+                    });
+
+                    animationId = requestAnimationFrame(measurePerformance);
+                }
+
+                log('performance-results', 'PASS: Начат мониторинг производительности', 'pass');
+                measurePerformance();
+
+                // Auto-stop after 30 seconds
+                setTimeout(() => {
+                    if (performanceActive) {
+                        stopPerformance();
+                        const elapsed = (performance.now() - startTime) / 1000;
+                        const avgFps = Math.round(frameCount / elapsed);
+
+                        log('performance-results', `Тест завершён за ${elapsed.toFixed(1)} секунд`, 'info');
+                        log('performance-results', `Средний FPS: ${avgFps}`, 'info');
+                        log('performance-results', `Frame time: min=${minFrameTime.toFixed(2)}ms, max=${maxFrameTime.toFixed(2)}ms, avg=${(totalFrameTime/frameCount).toFixed(2)}ms`, 'info');
+
+                        if (avgFps >= 25) {
+                            log('performance-results', 'PASS: Отличная производительность (FPS >= 25)', 'pass');
+                        } else if (avgFps >= 15) {
+                            log('performance-results', 'PASS: Приемлемая производительность (FPS >= 15)', 'pass');
+                        } else {
+                            log('performance-results', 'WARN: Низкая производительность (FPS < 15)', 'warn');
+                        }
+
+                        stream.getTracks().forEach(track => track.stop());
+                    }
+                }, 30000);
+
+            } catch (error) {
+                log('performance-results', `FAIL: ${error.message}`, 'fail');
+                performanceActive = false;
+            }
+        }
+
+        function stopPerformance() {
+            performanceActive = false;
+            if (animationId) {
+                cancelAnimationFrame(animationId);
+                animationId = null;
+            }
+        }
+
+        // Test 7: Cleanup
+        async function testStreamCleanup() {
+            clearLog('cleanup-results');
+            log('cleanup-results', 'Запуск теста очистки ресурсов...', 'info');
+
+            try {
+                // Create stream
+                log('cleanup-results', 'Создание тестового потока...', 'info');
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                log('cleanup-results', `PASS: Поток создан, ${stream.getTracks().length} треков`, 'pass');
+
+                const tracks = stream.getTracks();
+                tracks.forEach((track, i) => {
+                    log('cleanup-results', `Трек ${i + 1}: ${track.kind}, readyState=${track.readyState}`, 'info');
+                });
+
+                // Stop all tracks
+                log('cleanup-results', 'Остановка всех треков...', 'info');
+                tracks.forEach(track => track.stop());
+
+                // Verify
+                await new Promise(resolve => setTimeout(resolve, 100)); // Wait for async cleanup
+
+                let allStopped = true;
+                tracks.forEach((track, i) => {
+                    if (track.readyState !== 'ended') {
+                        allStopped = false;
+                        log('cleanup-results', `FAIL: Трек ${i + 1} не остановлен (${track.readyState})`, 'fail');
+                    } else {
+                        log('cleanup-results', `✓ Трек ${i + 1} остановлен`, 'info');
+                    }
+                });
+
+                if (allStopped) {
+                    log('cleanup-results', 'PASS: Все треки корректно остановлены', 'pass');
+                } else {
+                    log('cleanup-results', 'FAIL: Не все треки остановлены', 'fail');
+                }
+
+                if (!stream.active) {
+                    log('cleanup-results', 'PASS: Поток неактивен (stream.active === false)', 'pass');
+                } else {
+                    log('cleanup-results', 'FAIL: Поток всё ещё активен', 'fail');
+                }
+
+            } catch (error) {
+                log('cleanup-results', `FAIL: ${error.message}`, 'fail');
+            }
+        }
+
+        // Cleanup on unload
+        window.addEventListener('beforeunload', () => {
+            stopFrameProcessing();
+            stopFaceDetection();
+            stopFullPipeline();
+            stopPerformance();
+            stopAllStreams();
+        });
+
+        // Ready message
+        console.log('Stream Functionality Test Suite loaded');
+        console.log('All tests are ready to run');
+    </script>
+</body>
+</html>
