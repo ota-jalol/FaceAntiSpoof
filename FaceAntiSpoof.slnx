@@ -1,0 +1,19 @@
+<Solution>
+  <Configurations>
+    <Platform Name="Any CPU" />
+    <Platform Name="x64" />
+  </Configurations>
+  <Folder Name="/Solution Items/">
+    <File Path="CLAUDE.md" />
+    <File Path="README.md" />
+  </Folder>
+  <Project Path="FaceAntiSpoof.Core/FaceAntiSpoof.Core.csproj">
+    <Platform Solution="*|x64" Project="x64" />
+  </Project>
+  <Project Path="FaceAntiSpoof.Tests/FaceAntiSpoof.Tests.csproj">
+    <Platform Solution="*|x64" Project="x64" />
+  </Project>
+  <Project Path="FaceAntiSpoof.WinForms/FaceAntiSpoof.WinForms.csproj">
+    <Platform Solution="*|x64" Project="x64" />
+  </Project>
+</Solution>
