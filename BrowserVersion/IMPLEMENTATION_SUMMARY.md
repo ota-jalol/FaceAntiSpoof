@@ -18,7 +18,8 @@ BrowserVersion/
 │   ├── faceDetector.js    # BlazeFace детекция лиц
 │   └── main.js            # Главная логика приложения
 └── models/
-    ├── best_model_quantized.onnx  # 612 KB - модель антиспуфинга
+    ├── best_model.onnx            # 1.9 MB - FP32 модель (используется)
+    ├── best_model_quantized.onnx  # 612 KB - INT8 модель (несовместима)
     └── face_detection_yunet.onnx  # 228 KB - резервная модель
 ```
 
@@ -112,8 +113,8 @@ BrowserVersion/
 
 - Целевой FPS: 15-30 (достигнут)
 - Инференс: 30-80ms в зависимости от GPU
-- Размер модели: 612 KB (оптимально для браузера)
-- Загрузка: ~2 секунды первый раз, мгновенно из кеша
+- Размер модели: 1.9 MB FP32 (вместо 612 KB INT8 из-за несовместимости ONNX Runtime Web)
+- Загрузка: ~2-3 секунды первый раз, мгновенно из кеша
 
 ### ✅ Кросс-браузерная совместимость
 
@@ -130,7 +131,7 @@ BrowserVersion/
 - ✅ `index.html` (4 KB)
 - ✅ `css/style.css` (5 KB)
 - ✅ `js/*.js` (26 KB total)
-- ✅ `models/best_model_quantized.onnx` (612 KB)
+- ✅ `models/best_model.onnx` (1.9 MB FP32)
 - ✅ `README.md` (документация)
 - ✅ `SETUP.md` (инструкции)
 

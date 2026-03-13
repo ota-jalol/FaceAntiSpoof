@@ -23,8 +23,9 @@ BrowserVersion/
 │   ├── faceDetector.js    # Детектор лиц (BlazeFace)
 │   └── main.js            # Главная логика приложения
 └── models/
-    ├── best_model_quantized.onnx  # Модель антиспуфинга (612 KB)
-    └── face_detection_yunet.onnx  # Модель детекции лиц (227 KB)
+    ├── best_model.onnx            # Модель антиспуфинга FP32 (1.9 MB) - используется
+    ├── best_model_quantized.onnx  # Модель антиспуфинга INT8 (612 KB) - несовместима с Web
+    └── face_detection_yunet.onnx  # Модель детекции лиц (227 KB) - резерв
 ```
 
 ## 🚀 Быстрый старт
@@ -116,6 +117,9 @@ Canvas overlay (зелёная/красная рамка)
 2. **Интерполяция**: LANCZOS4/AREA → Canvas imageSmoothingQuality
 3. **Память**: Преаллоцированные буферы → Автоматическое управление памятью JS
 4. **Асинхронность**: `BoundedChannel<Mat>` → `requestAnimationFrame()`
+5. **Модель**: best_model_quantized.onnx (INT8) → best_model.onnx (FP32)
+   - ⚠️ ONNX Runtime Web не поддерживает `DynamicQuantizeLinear` оператор
+   - Используется FP32 модель (1.9 MB) вместо INT8 (612 KB)
 
 ### Критические детали портирования
 

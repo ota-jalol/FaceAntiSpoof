@@ -147,7 +147,8 @@ class FaceAntiSpoofApp {
             await this.faceDetector.initialize(0.5);
 
             // Инициализация антиспуфинга
-            await this.antiSpoof.initialize('models/best_model_quantized.onnx', this.useGpu);
+            // Используем non-quantized модель, т.к. ONNX Runtime Web не поддерживает DynamicQuantizeLinear
+            await this.antiSpoof.initialize('models/best_model.onnx', this.useGpu);
 
             console.log('Все модели загружены');
         } catch (error) {

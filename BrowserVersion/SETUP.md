@@ -156,7 +156,7 @@ Face Anti-Spoof Browser Application
 Портировано из C# .NET WinForms проекта
 Загрузка модели детекции лиц BlazeFace...
 BlazeFace загружен успешно
-Загрузка модели антиспуфинга: models/best_model_quantized.onnx
+Загрузка модели антиспуфинга: models/best_model.onnx
 Модель загружена. Вход: input, Выход: output
 Execution providers: ["webgl", "wasm"]
 Все модели загружены
@@ -174,11 +174,13 @@ js/preprocessing.js ~11 KB
 js/antiSpoof.js     ~4 KB
 js/faceDetector.js  ~3 KB
 js/main.js          ~8 KB
-models/best_model_quantized.onnx  612 KB
-models/face_detection_yunet.onnx  228 KB (не используется, резерв)
+models/best_model.onnx               1.9 MB (FP32, используется)
+models/face_detection_yunet.onnx     228 KB (резерв, не используется)
 ```
 
-**Общий размер**: ~875 KB + CDN библиотеки
+**Общий размер**: ~2 MB + CDN библиотеки
+
+**Примечание**: Используется FP32 модель (1.9 MB) вместо INT8 (612 KB), так как ONNX Runtime Web не поддерживает оператор `DynamicQuantizeLinear`.
 
 ---
 
